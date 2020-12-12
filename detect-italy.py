@@ -40,7 +40,7 @@ def spline(x, y, length):
     new_y = []
     new_x = []
 
-    k = 3
+    k = 5
     if k >= len(x):
         k = len(x) - 1
     if k % 2 == 0:
@@ -60,184 +60,197 @@ def spline(x, y, length):
     return spline_coords
 
 
-# PARAMETERS
-source = "TINITALY_image/Italia_tinitaly.jpg"
-# source = "DEM_italia.png"
-dest = "italy.png"
-saturation = {"min": 15, "max": 256}  # inside of this
-hue = {"min": 165, "max": 240}  # outside of this
+class Map:
+    def __init__(self):
+        self.saturation = [15, 256]  # inside of this
+        self.hue = [165, 240]  # outside of this
+        # PARAMETERS
+        self.min_width = 70
+        self.y_resolution = 100
+        self.y_scl = 5
+        self.y_levels = 32
+        self.x_resolution = 50
+        self.x_levels = 32
+        self.max_gap = 75
+        self.scl = 0.25  # the relative size of the destination image
 
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+    def loadSource(self, path):
+        self.source_im = Image.open(path)
+        self.hsv_im = self.source_im.convert("HSV")  # HSV - detect italy shape
+        self.bw_im = self.source_im.convert("L")  # Black and White - height
+        self.dest_im = Image.new('RGB', (int(self.source_im.width),
+                                 int(self.source_im.height)))
 
-logging.info("Script started")
-lines_coords = []
-height_map = []
+    def loadLines(self):
+        # detect lines from image
+        self.lines_coords = []
+        for y in range(0, self.hsv_im.height, self.y_resolution):
+            started = None
 
-logging.info("Loading images...")
-source_im = Image.open(source)
-hsv_im = source_im.convert("HSV")  # HSV - detect italy
-bw_im = source_im.convert("L")  # Black and White - get height
+            for x in range(0, self.hsv_im.width, self.x_resolution):
+                pixel = self.hsv_im.getpixel((x, y))
+                pixel = pixel_to_hsv(pixel)
+                # check saturation and hue
+                sat = pixel[1]  # saturation
+                hue = pixel[0]  # hue
 
-# PARAMETERS
+                if (self.saturation[0] < sat < self.saturation[1] and (hue < self.hue[0] or hue > self.hue[1])):
+                    # this is land, start line
+                    if not started:
+                        started = x
 
-min_width = 70
-y_resolution = 100
-y_scl = 5
-y_levels = 32
-x_resolution = 50
-x_levels = 32
-max_gap = 75
-scl = 0.25  # the relative size of the destination image
-"""min_width = 20
-y_resolution = 20
-y_scl = 0.75
-y_levels = 10
-x_resolution = 5
-max_gap = 20
-scl = 1"""
-# PARAMETERS END
+                elif started:
+                    # if started, its time to end since we found sea
+                    if x - started > self.min_width:
+                        # the line has to be long enough
+                        self.lines_coords.append({
+                            "start": {
+                                "x": started,
+                                "y": y
+                            },
+                            "end": {
+                                "x": x,
+                                "y": y
+                            }
+                        })
 
+                    started = None
 
-logging.info("Images loaded")
-dest_im = Image.new('RGB', (int(source_im.width), int(source_im.height)))
-logging.info("Destination image created")
+        # fill gaps between lines
+        for line in range(len(self.lines_coords) - 1):
+            if self.lines_coords[line]["start"]["y"] == self.lines_coords[line + 1]["start"]["y"]:  # on the same y
+                if self.lines_coords[line+1]["start"]["x"] - self.lines_coords[line]["end"]["x"] < self.max_gap:
+                    self.lines_coords[line]["end"]["x"] = self.lines_coords[line+1]["start"]["x"] - self.x_resolution
 
-# get lines
-logging.info("Loading lines...")
-for y in range(0, hsv_im.height, y_resolution):
-    started = None
+    def calculateHeights(self):
+        # calculate heights
+        self.height_map = []
+        for line in self.lines_coords:
+            y_start = line["start"]["y"]
+            x_start = line["start"]["x"]
+            x_end = line["end"]["x"]
 
-    for x in range(0, hsv_im.width, x_resolution):
-        pixel = hsv_im.getpixel((x, y))
-        pixel = pixel_to_hsv(pixel)
-        # check saturation and hue
-        if (pixel[1] > saturation["min"] and pixel[1] < saturation["max"] and (pixel[0] < hue["min"] or pixel[0] > hue["max"])):
-            if not started:
-                started = x
+            for x in range(x_start, x_end, self.x_resolution):
+                heights = []
+                for dx in range(self.x_resolution):
+                    for y in range(y_start, y_start + self.y_resolution):
+                        if (x + dx < self.bw_im.width and y < self.bw_im.height):
+                            heights.append(self.bw_im.getpixel((x + dx, y)))
 
-        elif started:
-            if x - started > min_width:
-                lines_coords.append({
+                avg_height = int(sum(heights) / len(heights))
+
+                # these coordinates are relative to the new (scaled) image
+                self.height_map.append({
                     "start": {
-                        "x": started,
+                        "x": x,
                         "y": y
                     },
                     "end": {
-                        "x": x,
+                        "x": x + self.x_resolution,
                         "y": y
-                    }
+                    },
+                    "height": avg_height
                 })
 
-            started = None
-logging.info("Lines loaded")
+        # get highest and lowest points
+        sorted_height_map = sorted(self.height_map, key=lambda x: x["height"])
+        lowest = sorted_height_map[0]["height"]  # lowest point on the map
+        highest = sorted_height_map[-1]["height"]  # highest point on the map
 
-# fill gaps
-logging.info("Filling gaps...")
-for line in range(len(lines_coords) - 1):
-    if lines_coords[line]["start"]["y"] == lines_coords[line + 1]["start"]["y"]:  # on the same y
-        if lines_coords[line+1]["start"]["x"] - lines_coords[line]["end"]["x"] < max_gap:
-            lines_coords[line]["end"]["x"] = lines_coords[line+1]["start"]["x"] - x_resolution
-logging.info("Gaps filled")
+        # normalize the heights
+        for height in self.height_map:
+            # height delta
+            d_height = self.y_scl * self.y_resolution
+            # normalize height
+            n_height = map(height["height"], lowest, highest, 0, d_height)
+            # quantize height
+            q_height = quantize(n_height, self.y_levels, 0, d_height)
+            color = int(map(height["height"], lowest, highest, 0, 255))
+            height["normalized_height"] = q_height
 
-# get heights
-logging.info("Calculating heights...")
-for line in lines_coords:
-    y_start = line["start"]["y"]
-    x_start = line["start"]["x"]
-    x_end = line["end"]["x"]
+            height["color"] = (color, color, color)
 
-    for x in range(x_start, x_end, x_resolution):
-        heights = []
-        for dx in range(x_resolution):
-            for y in range(y_start, y_start + y_resolution):
-                if (x + dx < bw_im.width and y < bw_im.height):
-                    heights.append(bw_im.getpixel((x + dx, y)))
+    def generateLines(self):
+        self.line_coords = []
 
-        avg_height = int(sum(heights) / len(heights))
-
-        # these coordinates are relative to the new (scaled) image
-        height_map.append({
-            "start": {
-                "x": x,
-                "y": y
-            },
-            "end": {
-                "x": x + x_resolution,
-                "y": y
-            },
-            "height": avg_height
-        })
-logging.info("Heights calculated")
-
-# normalize heights
-logging.info("Normalizing heights...")
-sorted_height_map = sorted(height_map, key=lambda x: x["height"])
-lowest = sorted_height_map[0]["height"]  # lowest point on the map
-highest = sorted_height_map[-1]["height"]  # highest point on the map
-
-for height in height_map:
-    # height delta
-    d_height = y_scl * y_resolution
-    # normalize height
-    n_height = map(height["height"], lowest, highest, 0, d_height)
-    # quantize height
-    q_height = quantize(n_height, y_levels, 0, d_height)
-    color = int(map(height["height"], lowest, highest, 0, 255))
-    height["normalized_height"] = q_height
-
-    height["color"] = (color, color, color)
-logging.info("Heights normalized...")
-
-# generate lines
-logging.info("Generating line coords...")
-line_coords = []
-
-unique_y = list(set(height["start"]["y"] for height in height_map))  # list of y values
-for y in unique_y:
-    line_x = []
-    line_y = []
-
-    lines_to_draw = [line for line in height_map if line["start"]["y"] == y]
-    for line in range(len(lines_to_draw)):
-
-        dy = lines_to_draw[line]["normalized_height"]
-        line_x.append(lines_to_draw[line]["start"]["x"])
-        line_y.append(lines_to_draw[line]["start"]["y"] - dy)
-
-        # this skips gaps (for example, sea)
-        if line < len(lines_to_draw) - 1 and lines_to_draw[line+1]["start"]["x"] - lines_to_draw[line]["end"]["x"] > max_gap:
-            spline_coords = spline(line_x, line_y, x_levels)
-            line_coords.append(spline_coords)
+        unique_y = list(set(height["start"]["y"] for height in self.height_map))  # list of y values
+        for y in unique_y:
             line_x = []
             line_y = []
-            continue
 
-    spline_coords = spline(line_x, line_y, x_levels)
-    line_coords.append(spline_coords)
+            lines_to_draw = [line for line in self.height_map if line["start"]["y"] == y]
+            for line in range(len(lines_to_draw)):
 
-    line_x = []
-    line_y = []
+                dy = lines_to_draw[line]["normalized_height"]
+                line_x.append(lines_to_draw[line]["start"]["x"])
+                line_y.append(lines_to_draw[line]["start"]["y"] - dy)
 
-logging.info("Line coords generated")
+                # this skips gaps (for example, sea)
+                if line < len(lines_to_draw) - 1 and lines_to_draw[line+1]["start"]["x"] - lines_to_draw[line]["end"]["x"] > self.max_gap:
+                    spline_coords = spline(line_x, line_y, self.x_levels)
+                    self.line_coords.append(spline_coords)
+                    line_x = []
+                    line_y = []
+                    continue
 
-# draw lines
-logging.info("Drawing lines...")
-draw = ImageDraw.Draw(dest_im)
-for line in line_coords:
-    if not line:
-        continue
+            spline_coords = spline(line_x, line_y, self.x_levels)
+            self.line_coords.append(spline_coords)
 
-    width = int(4 / scl)
-    draw.line((line), fill=(255, 255, 255), width=width)
+            line_x = []
+            line_y = []
 
-new_width = int(source_im.width * scl)
-new_height = int(source_im.height * scl)
-dest_im = dest_im.resize((new_width, new_height), Image.ANTIALIAS)
+    def drawOutput(self):
+        draw = ImageDraw.Draw(self.dest_im)
+        for line in self.line_coords:
+            if not line:
+                continue
 
-logging.info("Lines drawn")
+            width = int(4 / self.scl)
+            draw.line((line), fill=(255, 255, 255), width=width)
 
-# save image
-logging.info("Saving image...")
-dest_im.save(dest)
-logging.info(f"Image saved. Filename: {dest}")
-logging.info("Script ended")
+        # hide logo
+        draw.rectangle([7250, 0, 10700, 950], fill=(0, 0, 0))
+
+        new_width = int(self.source_im.width * self.scl)
+        new_height = int(self.source_im.height * self.scl)
+        self.dest_im = self.dest_im.resize((new_width, new_height), Image.ANTIALIAS)
+
+    def saveDestImage(self, path):
+        self.dest_im.save(path)
+
+
+def main():
+    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+    logging.info("Script started")
+
+    source_file = "TINITALY_image/Italia_tinitaly.jpg"
+    destination_file = "italy.png"
+    
+    m = Map()
+    logging.info("Loading images...")
+    m.loadSource(source_file)
+    logging.info("Images loaded")
+
+    logging.info("Loading lines...")
+    m.loadLines()
+    logging.info("Lines loaded")
+
+    logging.info("Calculating heights...")
+    m.calculateHeights()
+    logging.info("Heights calculated")
+
+    logging.info("Generating line coords...")
+    m.generateLines()
+    logging.info("Line coords generated")
+
+    logging.info("Drawing output...")
+    m.drawOutput()
+    logging.info("Output drawn")
+
+    logging.info("Saving image...")
+    m.saveDestImage(destination_file)
+    logging.info(f"Image saved. Filename: {destination_file}")
+
+
+if __name__ == "__main__":
+    main()
