@@ -1,6 +1,7 @@
 import time
 import shutil
 import logging
+import subprocess
 
 from pathlib import Path
 from math import pi, sin, cos
@@ -78,8 +79,8 @@ class Map:
         self.x_resolution = 50
         self.x_levels = 32
         self.max_gap = 75
-        self.scl = 0.25  # the relative size of the destination image
-        self.noise_scl = 1
+        self.destination_size = 1200  # the size of the destination image and video
+        self.noise_scl = 5
         self.noise_radius = 1
 
         seed = int(time.time())
@@ -89,6 +90,12 @@ class Map:
         self.source_im = Image.open(path)
         self.hsv_im = self.source_im.convert("HSV")  # HSV - detect italy shape
         self.bw_im = self.source_im.convert("L")  # Black and White - height
+
+        image_width = self.source_im.width
+        image_height = self.source_im.height
+        biggest = max(image_width, image_height)
+        self.scl = self.destination_size / biggest
+        self.line_width = 4 / scl
 
     def loadLines(self):
         # detect lines from image
@@ -230,8 +237,7 @@ class Map:
             if not line:
                 continue
 
-            width = int(4 / self.scl)
-            draw.line((line), fill=(255, 255, 255), width=width)
+            draw.line((line), fill=(255, 255, 255), width=self.line_width)
 
         # hide logo
         draw.rectangle([7250, 0, 10700, 950], fill=(0, 0, 0))
@@ -241,10 +247,9 @@ class Map:
         self.dest_im = self.dest_im.resize((new_width, new_height), Image.ANTIALIAS)
 
     def saveDestImage(self, folder, filename, frame_num):
-        name = filename.split(".")[0]
-        ext = filename.split(".")[-1]
+        ext = "png"
         number = str(frame_num).zfill(7)
-        path = f"{folder}/{name}_{number}.{ext}"
+        path = f"{folder}/{filename}_{number}.{ext}"
         self.dest_im.save(path)
         return path
 
@@ -252,23 +257,28 @@ class Map:
         printed = False
         while Path("PAUSE").is_file():
             if not printed:
-                print("File PAUSE detected. Pausing until it's deleted.")
+                logging.info("File PAUSE detected. Pausing until it's deleted.")
                 printed = True
             time.sleep(1)
+
+        if printed:
+            logging.info("Resuming....")
 
 
 def main():
     # FFMPEG command:
     # ffmpeg -y -r 60 -i frames/italy_%07d.png -loop 0 output/video.mp4
 
-    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+    logging_file = __file__.replace(".py", ".log")
+    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO, filemode="w", filename=logging_file)
+    print(f"Logging into file{logging_file}\n\n")
     logging.info("Script started")
     script_start = time.time()
 
     source_file = "source/Italia_tinitaly.jpg"
     destination_folder = "frames"
     video_folder = "output"
-    destination_file = "italy.png"
+    destination_file = "italy"
     fps = 60
     duration = 15
 
@@ -300,6 +310,7 @@ def main():
     m.calculateHeights()
     logging.info("Heights calculated")
 
+    generating_start = time.time()
     for x in range(total_frames):
         percent = x / total_frames
 
@@ -316,9 +327,19 @@ def main():
         logging.info(f"Image {x+1}/{total_frames} saved. Location: {path}")
 
         m.checkPause()
+        if percent > 0:
+            elapsed = int(time.time() - generating_start)
+            total = elapsed / percent
+            remaining = int(total - elapsed)
+            remaining_min = int(remaining / 60)
+            logging.info(f"Time elapsed: {elapsed}s. Remaining: {remaining}s (~{remaining_min} min).")
 
-    elasped = int(time.time() - script_start)
-    logging.info(f"Script completed. It took {elasped} seconds.")
+    # generate the output video
+    options = f"ffmpeg -y -r {fps} -i {destination_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}.mp4"
+    subprocess.run(options.split(" "))
+
+    elapsed = int(time.time() - script_start)
+    logging.info(f"Script completed. It took {elapsed} seconds.")
 
 
 if __name__ == "__main__":
