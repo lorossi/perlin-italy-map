@@ -7,9 +7,7 @@ Each time the video will be slightly different as the noise function is seeded w
 You will need `ffmpeg` to let the script automatically create a final video. If your OS is not equipped with it, you will need to manually compose a video from all the frames.
 
 ## Output
-Watch a *low-quality gif* here below or view an higher quality video [here on Vimeo](https://vimeo.com/490516743) or on my [Instagram profile](https://www.instagram.com/lorossi97/). If you're willing to, clone the repo and look inside the *output* folder.
-
-<img src="https://i.imgur.com/CVV3zUM.mp4"></img>
+Watch a *low-quality gif* [here on Imgur](https://i.imgur.com/CVV3zUM.mp4) or view an higher quality video [here on Vimeo](https://vimeo.com/490516743) or on my [Instagram profile](https://www.instagram.com/lorossi97/). If you're willing to, clone the repo and look inside the *output* folder.
 
 ## Commands
 | Command | Description | Defaults | Type |
