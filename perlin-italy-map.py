@@ -1,3 +1,5 @@
+# Lorenzo Rossi - wwww.lorenzoros.si
+
 import time
 import shutil
 import logging
