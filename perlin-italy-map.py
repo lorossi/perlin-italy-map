@@ -76,7 +76,7 @@ class Map:
         # x spacing between lines
         self.x_resolution = 100
         # number of interpolation
-        self.x_levels = 25
+        self.x_levels = 100
         # pixel width of destination image
         self.destination_size = destination_size
         # noise parameters
@@ -116,8 +116,13 @@ class Map:
         self.lines_coords = []
         for y in range(0, self.hsv_im.height, self.y_resolution):
             started = None
+            # add some fuzzyness
+            nx = 0
+            ny = y * self.noise_scl
+            n = self.noise.noise2d(x=nx, y=ny)
+            dx = int(map(n, -1, 1, -self.x_resolution / 2, self.x_resolution/2))
 
-            for x in range(0, self.hsv_im.width, self.x_resolution):
+            for x in range(dx, self.hsv_im.width, self.x_resolution):
                 pixel = self.hsv_im.getpixel((x, y))
                 # check saturation and hue
                 hue = int(pixel[0] / 255 * 360)  # hue
@@ -284,15 +289,19 @@ class Map:
 
     def checkPause(self):
         printed = False
+        started = None
         while Path("PAUSE").is_file():
             if not printed:
                 logging.info("File PAUSE detected. Pausing until it's deleted.")
+                started = time.time()
                 printed = True
             time.sleep(1)
 
         if printed:
+            lost = time.time() - started
             logging.info("Resuming....")
-
+            return lost
+        return 0
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a looping animation"
@@ -366,6 +375,7 @@ def main():
     logging.info("Heights calculated")
 
     generating_start = time.time()
+    time_lost = 0
     for x in range(total_frames):
         percent = x / total_frames
 
@@ -373,35 +383,42 @@ def main():
         m.generateLines(percent)
         m.drawOutput()
         path = m.saveDestImage(frames_folder, destination_file, x)
-        logging.info(f"Image {x+1}/{total_frames} saved. Location: {path}")
+        log_text = f"Image {x+1}/{total_frames} saved. Location: {path}"
 
-        m.checkPause()
+        time_lost += m.checkPause()
         if percent > 0:
-            elapsed = int(time.time() - generating_start)
+            elapsed = int(time.time() - generating_start - time_lost)
             elapsed_min = int(elapsed / 60)
             total = elapsed / percent
             remaining = int(total - elapsed)
             remaining_min = int(remaining / 60)
             progress = int(percent * 100)
 
-            log_text = (
+            log_text += (
                     f"Time elapsed: {elapsed}s (~{elapsed_min}min). "
                     f"Remaining: {remaining}s (~{remaining_min} min). "
                     f"Progress: {progress}%"
             )
-            logging.info(log_text)
+        logging.info(log_text)
 
-    # generate the output video with timestamp to avoid overwriting
+    # generate the output video, webm and gif with timestamp in the name to avoid overwriting
     try:
         timestamp = int(time.time())
         options = f"ffmpeg -y -r {args.fps} -i {frames_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}_{timestamp}.mp4"
         subprocess.run(options.split(" "))
+        options = f"ffmpeg -y -i {video_folder}/{destination_file}_{timestamp}.mp4 -loop 0 -filter_complex fps=25,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse {video_folder}/{destination_file}_{timestamp}.gif"
+        subprocess.run(options.split(" "))
+        options = f"ffmpeg -i {video_folder}/{destination_file}_{timestamp}.mp4 -c:v libvpx-vp9 -crf 15 -b:v 0 -b:a 128k -c:a libopus {video_folder}/{destination_file}_{timestamp}.webm"
+        subprocess.run(options.split(" "))
+        options = f"ffmpeg -i {video_folder}/{destination_file}_{timestamp}.mp4 -c:v libvpx-vp9 -crf 50 -b:v 0 -b:a 128k -c:a libopus {video_folder}/{destination_file}_{timestamp}_low_quality.webm"
+        subprocess.run(options.split(" "))
     except Exception as e:
         logging.error(f"Cannot make output video using ffmpeg. Error: {e}")
 
-    elapsed = int(time.time() - script_start)
+    elapsed = int(time.time() - script_start - time_lost)
     elapsed_min = int(elapsed / 60)
-    logging.info(f"Script completed. It took {elapsed} seconds (~{elapsed_min} minutes).")
+    seconds_per_frame = int(elapsed / total_frames)
+    logging.info(f"Script completed. It took {elapsed} seconds (~{elapsed_min} minutes), averaging ~{seconds_per_frame}s per frame")
 
 
 if __name__ == "__main__":
