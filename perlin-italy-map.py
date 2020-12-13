@@ -1,6 +1,7 @@
 import time
 import shutil
 import logging
+import argparse
 import subprocess
 
 from pathlib import Path
@@ -68,8 +69,8 @@ def spline(x, y, length):
 
 
 class Map:
-    def __init__(self, destination_size):
-        self.saturation = [15, 256]  # inside of this
+    def __init__(self, destination_size, fps):
+        self.saturation = [55, 255]  # inside of this
         self.hue = [165, 240]  # outside of this
         # PARAMETERS
         # min width of a line
@@ -90,7 +91,7 @@ class Map:
         self.destination_size = destination_size
         # noise parameters
         self.noise_scl = 0.005
-        self.noise_radius = 2.5
+        self.noise_radius = map(fps, 0, 120, 0, 2.5)
         # line alpha
         self.line_alpha = 5
         # watermark font size
@@ -127,14 +128,13 @@ class Map:
             started = None
 
             for x in range(0, self.hsv_im.width, self.x_resolution):
-                pixel = self.hsv_im.getpixel((x, y))
-                pixel = pixel_to_hsv(pixel)
+                pixel = pixel_to_hsv(self.hsv_im.getpixel((x, y)))
                 # check saturation and hue
-                sat = pixel[1]  # saturation
                 hue = pixel[0]  # hue
+                sat = pixel[1]  # saturation
 
                 # check if saturation is in boundaries (to find Italy)
-                if (self.saturation[0] < sat < self.saturation[1]):
+                if (self.saturation[0] < sat <= self.saturation[1]):
                     # check if hue is outside boundaries (to find land)
                     if (hue < self.hue[0] or hue > self.hue[1]):
                         # this is land, start line
@@ -159,14 +159,16 @@ class Map:
                     started = None
 
         # fill gaps between lines
+        """
         for line in range(len(self.lines_coords) - 1):
             y = self.lines_coords[line]["start"]["y"]
             next_y = self.lines_coords[line + 1]["start"]["y"]
             if y == next_y:  # on the same y
-                x = self.lines_coords[line]["start"]["x"]
-                next_x = self.lines_coords[line+1]["end"]["x"]
+                x = self.lines_coords[line]["end"]["x"]
+                next_x = self.lines_coords[line+1]["start"]["x"]
                 if next_x - x < self.max_gap:
                     self.lines_coords[line]["end"]["x"] = self.lines_coords[line+1]["start"]["x"] - self.x_resolution
+        """
 
     def calculateHeights(self):
         # calculate heights
@@ -236,26 +238,26 @@ class Map:
                 nw = lines_to_draw[line]["start"]["y"] * self.noise_scl
                 # noise value
                 n = self.noise.noise4d(x=nx, y=ny, z=nz, w=nw)
-
                 # height offset
-                ndy = map(n, -1, 1, -self.d_height / 2, self.d_height / 2)
+                ndy = map(n, -1, 1, 0, 2)
 
                 dy = lines_to_draw[line]["normalized_height"]
                 line_x.append(lines_to_draw[line]["start"]["x"] + self.dx)
-                line_y.append(lines_to_draw[line]["start"]["y"] - dy + ndy + self.dy)
+                line_y.append(lines_to_draw[line]["start"]["y"] - dy * ndy + self.dy)
 
                 # this skips gaps (for example, sea)
-                gap = lines_to_draw[line+1]["start"]["x"] - lines_to_draw[line]["end"]["x"]
-                if line < len(lines_to_draw) - 1 and gap > self.max_gap:
-                    spline_coords = spline(line_x, line_y, self.x_levels)
-                    self.line_coords.append(spline_coords)
-                    line_x = []
-                    line_y = []
-                    continue
+                if line < len(lines_to_draw) - 1:
+                    gap = lines_to_draw[line+1]["start"]["x"] - lines_to_draw[line]["end"]["x"]
+
+                    if gap > self.max_gap:
+                        spline_coords = spline(line_x, line_y, self.x_levels)
+                        self.line_coords.append(spline_coords)
+                        line_x = []
+                        line_y = []
+                        continue
 
             spline_coords = spline(line_x, line_y, self.x_levels)
             self.line_coords.append(spline_coords)
-
             line_x = []
             line_y = []
 
@@ -273,7 +275,7 @@ class Map:
             draw.line((line), fill=(255, 255, 255, self.line_alpha), width=self.line_width)
 
         # hide logo
-        draw.rectangle([7250, 0, 10700, 950], fill=(0, 0, 0))
+        #draw.rectangle([7250, 0, 10700, 950], fill=(0, 0, 0))
 
         new_width = int(self.source_im.width * self.scl)
         new_height = int(self.source_im.height * self.scl)
@@ -309,15 +311,36 @@ class Map:
 
 
 def main():
-    # FFMPEG command:
-    # ffmpeg -y -r 60 -i frames/italy_%07d.png -loop 0 output/video.mp4
-    # cd /mnt/c/lorenzo/python/perlin-italy-map
-    # python3 perlin-italy-map.py
+    parser = argparse.ArgumentParser(description="Generate a looping animation"
+                                                 " of Italian mountains")
+    parser.add_argument("-d", "--duration", type=int,
+                        help="destination video duration (defaults to 15)",
+                        default=15)
+    parser.add_argument("-f", "--fps", type=int,
+                        help="destination video fps (defaults to 60)",
+                        default=60)
+    parser.add_argument("-s", "--size", type=int,
+                        help="destination video width and height in pixel "
+                        "(defaults to 1200)",
+                        default=1200)
+    parser.add_argument("-l", "--log", action="store",
+                        choices=["file", "console"], default="file",
+                        help="log destination (defaults to file)")
+    args = parser.parse_args()
 
-    logging_file = __file__.replace(".py", ".log")
-    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
-    print(f"Logging into file {logging_file}\n\n")
+    if args.log == "file":
+        logfile = __file__.replace(".py", ".log")
+        print(f"Logging into file {logfile}\n\n")
+        logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",
+                            level=logging.INFO, filename=logfile,
+                            filemode="w+")
+        print("Logging in every-color.log")
+    else:
+        logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",
+                            level=logging.INFO)
+
     logging.info("Script started")
+    logging.info(f"Generating video: {args.fps} fps, {args.duration} duration, {args.size} pixels of size")
     script_start = time.time()
 
     source_file = "source/Italia_tinitaly.jpg"
@@ -325,15 +348,9 @@ def main():
     destination_folder = "frames"
     video_folder = "output"
     destination_file = "italy"
-    # output video fps
-    fps = 60
-    # output video duration
-    duration = 15
-    # size of output video
-    output_size = 120
 
-    total_frames = fps * duration
-    m = Map(output_size)
+    total_frames = args.fps * args.duration
+    m = Map(args.size, args.fps)
 
     logging.info("Creating folders...")
     try:
@@ -397,11 +414,18 @@ def main():
             logging.info(log_text)
 
     # generate the output video
-    options = f"ffmpeg -y -r {fps} -i {destination_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}.mp4"
-    subprocess.run(options.split(" "))
+    timestamp = int(time.time())
+    try:
+        options = f"ffmpeg -y -r {args.fps} -i {destination_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}_{timestamp}.mp4"
+        subprocess.run(options.split(" "))
+        options = f"ffmpeg -y -r {args.fps} -i {destination_folder}/{destination_file}_%07d.png -crf 5 -q:v 10 -c:v libvpx -c:a libvorbis {video_folder}/{destination_file}_{timestamp}.mp4"
+        subprocess.run(options.split(" "))
+    except Exception as e:
+        logging.error(f"Cannot make output video using ffmpeg. Error: {e}")
 
     elapsed = int(time.time() - script_start)
-    logging.info(f"Script completed. It took {elapsed} seconds.")
+    elapsed_min = int(elapsed / 60)
+    logging.info(f"Script completed. It took {elapsed} seconds (~{elapsed_min} minutes).")
 
 
 if __name__ == "__main__":
