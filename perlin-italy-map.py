@@ -1,6 +1,7 @@
 import time
 import shutil
 import logging
+import argparse
 import subprocess
 
 from pathlib import Path
@@ -68,7 +69,7 @@ def spline(x, y, length):
 
 
 class Map:
-    def __init__(self, destination_size):
+    def __init__(self, destination_size, fps):
         self.saturation = [15, 256]  # inside of this
         self.hue = [165, 240]  # outside of this
         # PARAMETERS
@@ -90,7 +91,7 @@ class Map:
         self.destination_size = destination_size
         # noise parameters
         self.noise_scl = 0.005
-        self.noise_radius = 2.5
+        self.noise_radius = map(fps, 0, 120, 0, 5)
         # line alpha
         self.line_alpha = 5
         # watermark font size
@@ -309,14 +310,34 @@ class Map:
 
 
 def main():
-    # FFMPEG command:
-    # ffmpeg -y -r 60 -i frames/italy_%07d.png -loop 0 output/video.mp4
-    # cd /mnt/c/lorenzo/python/perlin-italy-map
-    # python3 perlin-italy-map.py
+    parser = argparse.ArgumentParser(description="Generate a looping animation"
+                                                 " of Italian mountains")
+    parser.add_argument("-d", "--duration", type=int,
+                        help="destination video duration (defaults to 15)",
+                        default=15)
+    parser.add_argument("-f", "--fps", type=int,
+                        help="destination video fps (defaults to 60)",
+                        default=60)
+    parser.add_argument("-s", "--size", type=int,
+                        help="destination video width and height in pixel "
+                        "(defaults to 1200)",
+                        default=1200)
+    parser.add_argument("-l", "--log", action="store",
+                        choices=["file", "console"], default="file",
+                        help="log destination (defaults to file)")
+    args = parser.parse_args()
 
-    logging_file = __file__.replace(".py", ".log")
-    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
-    print(f"Logging into file {logging_file}\n\n")
+    if args.log == "file":
+        logfile = __file__.replace(".py", ".log")
+        print(f"Logging into file {logfile}\n\n")
+        logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",
+                            level=logging.INFO, filename=logfile,
+                            filemode="w+")
+        print("Logging in every-color.log")
+    else:
+        logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",
+                            level=logging.INFO)
+
     logging.info("Script started")
     script_start = time.time()
 
@@ -325,15 +346,9 @@ def main():
     destination_folder = "frames"
     video_folder = "output"
     destination_file = "italy"
-    # output video fps
-    fps = 60
-    # output video duration
-    duration = 15
-    # size of output video
-    output_size = 120
 
-    total_frames = fps * duration
-    m = Map(output_size)
+    total_frames = args.fps * args.duration
+    m = Map(args.size, args.fps)
 
     logging.info("Creating folders...")
     try:
@@ -397,7 +412,8 @@ def main():
             logging.info(log_text)
 
     # generate the output video
-    options = f"ffmpeg -y -r {fps} -i {destination_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}.mp4"
+    timestamp = int(time.time())
+    options = f"ffmpeg -y -r {args.fps} -i {destination_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}_{timestamp}.mp4"
     subprocess.run(options.split(" "))
 
     elapsed = int(time.time() - script_start)
