@@ -11,14 +11,6 @@ from scipy.interpolate import interp1d
 from PIL import Image, ImageFont, ImageDraw
 
 
-# correct pixel range
-def pixel_to_hsv(pixel, decimals=1):
-    h = round(pixel[0] / 255 * 360, decimals)
-    s = round(pixel[1] / 255 * 100, decimals)
-    v = round(pixel[2] / 255 * 100, decimals)
-    return (h, s, v)
-
-
 # translate variables
 def map(value, old_min, old_max, new_min, new_max):
     if value < old_min:
@@ -70,11 +62,9 @@ def spline(x, y, length):
 
 class Map:
     def __init__(self, destination_size, fps):
-        self.saturation = [55, 255]  # inside of this
-        self.hue = [165, 240]  # outside of this
+        self.saturation = [25, 180]  # inside of this
+        self.hue = [165, 230]  # outside of this
         # PARAMETERS
-        # min width of a line
-        self.min_width = 100
         # y spacing between lines
         self.y_resolution = 40
         # max dh of a line (relative to y uyresolution)
@@ -82,16 +72,14 @@ class Map:
         # y quantization in levels
         self.y_levels = 16
         # x spacing between lines
-        self.x_resolution = 40
+        self.x_resolution = 100
         # number of interpolation
-        self.x_levels = 16
-        # max x spacing between lines
-        self.max_gap = 75
+        self.x_levels = 25
         # pixel width of destination image
         self.destination_size = destination_size
         # noise parameters
         self.noise_scl = 0.005
-        self.noise_radius = map(fps, 0, 120, 0, 2.5)
+        self.noise_radius = map(fps, 0, 120, 0, 5)
         # line alpha
         self.line_alpha = 5
         # watermark font size
@@ -128,23 +116,28 @@ class Map:
             started = None
 
             for x in range(0, self.hsv_im.width, self.x_resolution):
-                pixel = pixel_to_hsv(self.hsv_im.getpixel((x, y)))
+                pixel = self.hsv_im.getpixel((x, y))
                 # check saturation and hue
-                hue = pixel[0]  # hue
-                sat = pixel[1]  # saturation
+                hue = int(pixel[0] / 255 * 360)  # hue
+                sat = int(pixel[1] / 255 * 100)  # saturation
+                # have we found land?
+                land = False
 
                 # check if saturation is in boundaries (to find Italy)
-                if (self.saturation[0] < sat <= self.saturation[1]):
+                if (self.saturation[0] < sat < self.saturation[1]):
                     # check if hue is outside boundaries (to find land)
                     if (hue < self.hue[0] or hue > self.hue[1]):
-                        # this is land, start line
-                        if not started:
-                            started = x
+                        # this is land
+                        land = True
 
-                elif started:
-                    # if started, its time to end since we found sea
-                    if x - started > self.min_width:
-                        # the line has to be long enough
+                # we found land, start the line
+                if land and not started:
+                    started = x
+
+                # we don't have land anymore, stop line
+                if not land and started:
+                    # the line has to be longer than 1 step
+                    if x - started > self.x_resolution:
                         self.lines_coords.append({
                             "start": {
                                 "x": started,
@@ -155,20 +148,8 @@ class Map:
                                 "y": y
                             }
                         })
-
+                    # anyway, get ready for the next line
                     started = None
-
-        # fill gaps between lines
-        """
-        for line in range(len(self.lines_coords) - 1):
-            y = self.lines_coords[line]["start"]["y"]
-            next_y = self.lines_coords[line + 1]["start"]["y"]
-            if y == next_y:  # on the same y
-                x = self.lines_coords[line]["end"]["x"]
-                next_x = self.lines_coords[line+1]["start"]["x"]
-                if next_x - x < self.max_gap:
-                    self.lines_coords[line]["end"]["x"] = self.lines_coords[line+1]["start"]["x"] - self.x_resolution
-        """
 
     def calculateHeights(self):
         # calculate heights
@@ -181,11 +162,12 @@ class Map:
             for x in range(x_start, x_end, self.x_resolution):
                 heights = []
                 for dx in range(self.x_resolution):
-                    heights.append(self.bw_im.getpixel((x + dx, y_start)))
+                    for y in range(y_start, y_start + self.y_resolution):
+                        if (x + dx < self.bw_im.width and y < self.bw_im.height):
+                            heights.append(self.bw_im.getpixel((x + dx, y)))
 
                 avg_height = int(sum(heights) / len(heights))
 
-                # these coordinates are relative to the new (scaled) image
                 self.height_map.append({
                     "start": {
                         "x": x,
@@ -249,7 +231,7 @@ class Map:
                 if line < len(lines_to_draw) - 1:
                     gap = lines_to_draw[line+1]["start"]["x"] - lines_to_draw[line]["end"]["x"]
 
-                    if gap > self.max_gap:
+                    if gap > self.x_resolution:
                         spline_coords = spline(line_x, line_y, self.x_levels)
                         self.line_coords.append(spline_coords)
                         line_x = []
@@ -275,7 +257,7 @@ class Map:
             draw.line((line), fill=(255, 255, 255, self.line_alpha), width=self.line_width)
 
         # hide logo
-        #draw.rectangle([7250, 0, 10700, 950], fill=(0, 0, 0))
+        draw.rectangle([7250, 0, 10700, 950], fill=(0, 0, 0))
 
         new_width = int(self.source_im.width * self.scl)
         new_height = int(self.source_im.height * self.scl)
@@ -289,7 +271,7 @@ class Map:
         text = "Lorenzo Rossi - www.lorenzoros.si"
         x = self.font_size * 0.5
         y = self.destination_size - self.font_size * 1.5
-        draw.text((x, y), fill=(255, 255, 255, 32), text=text, font=self.font)
+        draw.text((x, y), fill=(127, 127, 127, 32), text=text, stroke_width=0, font=self.font)
 
     def saveDestImage(self, folder, filename, frame_num):
         ext = "png"
@@ -326,6 +308,10 @@ def main():
     parser.add_argument("-l", "--log", action="store",
                         choices=["file", "console"], default="file",
                         help="log destination (defaults to file)")
+    parser.add_argument("-o", "--output", action="store",
+                        default="italy",
+                        help="output filename (defaults to italy)")
+
     args = parser.parse_args()
 
     if args.log == "file":
@@ -340,29 +326,24 @@ def main():
                             level=logging.INFO)
 
     logging.info("Script started")
-    logging.info(f"Generating video: {args.fps} fps, {args.duration} duration, {args.size} pixels of size")
+    logging.info(f"Generating video: {args.fps} fps, {args.duration} seconds, {args.size} pixels of size")
     script_start = time.time()
 
     source_file = "source/Italia_tinitaly.jpg"
-    font = "source/Roboto-LightItalic.ttf"
-    destination_folder = "frames"
+    font = "source/Roboto-ThinItalic.ttf"
+    frames_folder = "frames"
     video_folder = "output"
-    destination_file = "italy"
+    destination_file = args.output
 
     total_frames = args.fps * args.duration
     m = Map(args.size, args.fps)
 
     logging.info("Creating folders...")
     try:
-        shutil.rmtree(destination_folder)
+        shutil.rmtree(frames_folder)
     except Exception as e:
-        logging.info(f"Folder {destination_folder} does not exist. Error: {e}")
-    Path(destination_folder).mkdir(parents=True, exist_ok=True)
-
-    try:
-        shutil.rmtree(video_folder)
-    except Exception as e:
-        logging.info(f"Folder {video_folder} does not exist. Error: {e}")
+        logging.info(f"Folder {frames_folder} does not exist. Error: {e}")
+    Path(frames_folder).mkdir(parents=True, exist_ok=True)
     Path(video_folder).mkdir(parents=True, exist_ok=True)
     logging.info("Folders created")
 
@@ -386,16 +367,10 @@ def main():
     for x in range(total_frames):
         percent = x / total_frames
 
-        logging.info("Generating line coords...")
+        logging.info(f"Starting generation of image {x+1}/{total_frames}...")
         m.generateLines(percent)
-        logging.info("Line coords generated")
-
-        logging.info("Drawing output...")
         m.drawOutput()
-        logging.info("Output drawn")
-
-        logging.info("Saving image...")
-        path = m.saveDestImage(destination_folder, destination_file, x)
+        path = m.saveDestImage(frames_folder, destination_file, x)
         logging.info(f"Image {x+1}/{total_frames} saved. Location: {path}")
 
         m.checkPause()
@@ -405,20 +380,19 @@ def main():
             total = elapsed / percent
             remaining = int(total - elapsed)
             remaining_min = int(remaining / 60)
+            progress = int(percent * 100)
 
             log_text = (
                     f"Time elapsed: {elapsed}s (~{elapsed_min}min). "
-                    f"Remaining: {remaining}s (~{remaining_min} min)."
+                    f"Remaining: {remaining}s (~{remaining_min} min). "
+                    f"Progress: {progress}%"
             )
-
             logging.info(log_text)
 
-    # generate the output video
-    timestamp = int(time.time())
+    # generate the output video with timestamp to avoid overwriting
     try:
-        options = f"ffmpeg -y -r {args.fps} -i {destination_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}_{timestamp}.mp4"
-        subprocess.run(options.split(" "))
-        options = f"ffmpeg -y -r {args.fps} -i {destination_folder}/{destination_file}_%07d.png -crf 5 -q:v 10 -c:v libvpx -c:a libvorbis {video_folder}/{destination_file}_{timestamp}.mp4"
+        timestamp = int(time.time())
+        options = f"ffmpeg -y -r {args.fps} -i {frames_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}_{timestamp}.mp4"
         subprocess.run(options.split(" "))
     except Exception as e:
         logging.error(f"Cannot make output video using ffmpeg. Error: {e}")
