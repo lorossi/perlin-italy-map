@@ -331,7 +331,7 @@ def main():
         logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",
                             level=logging.INFO, filename=logfile,
                             filemode="w+")
-        print("Logging in every-color.log")
+
     else:
         logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s",
                             level=logging.INFO)
