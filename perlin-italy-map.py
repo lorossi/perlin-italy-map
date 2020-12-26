@@ -120,7 +120,8 @@ class Map:
             nx = 0
             ny = y * self.noise_scl
             n = self.noise.noise2d(x=nx, y=ny)
-            dx = int(map(n, -1, 1, -self.x_resolution / 2, self.x_resolution/2))
+            dx = int(map(n, -1, 1, -self.x_resolution / 2,
+                         self.x_resolution/2))
 
             for x in range(dx, self.hsv_im.width, self.x_resolution):
                 pixel = self.hsv_im.getpixel((x, y))
@@ -170,7 +171,8 @@ class Map:
                 heights = []
                 for dx in range(self.x_resolution):
                     for y in range(y_start, y_start + self.y_resolution):
-                        if (x + dx < self.bw_im.width and y < self.bw_im.height):
+                        if (x + dx < self.bw_im.width
+                                and y < self.bw_im.height):
                             heights.append(self.bw_im.getpixel((x + dx, y)))
 
                 avg_height = int(sum(heights) / len(heights))
@@ -220,7 +222,9 @@ class Map:
             line_x = []
             line_y = []
 
-            lines_to_draw = [line for line in self.height_map if line["start"]["y"] == y]
+            lines_to_draw = [line for line in self.height_map
+                             if line["start"]["y"] == y]
+
             for line in range(len(lines_to_draw)):
                 # noise coordinates
                 nz = lines_to_draw[line]["start"]["x"] * self.noise_scl
@@ -232,11 +236,13 @@ class Map:
 
                 dy = lines_to_draw[line]["normalized_height"]
                 line_x.append(lines_to_draw[line]["start"]["x"] + self.dx)
-                line_y.append(lines_to_draw[line]["start"]["y"] - dy * ndy + self.dy)
+                line_y.append(lines_to_draw[line]["start"]["y"]
+                              - dy * ndy + self.dy)
 
                 # this skips gaps (for example, sea)
                 if line < len(lines_to_draw) - 1:
-                    gap = lines_to_draw[line+1]["start"]["x"] - lines_to_draw[line]["end"]["x"]
+                    gap = lines_to_draw[line+1]["start"]["x"] \
+                          - lines_to_draw[line]["end"]["x"]
 
                     if gap > self.x_resolution:
                         spline_coords = spline(line_x, line_y, self.x_levels)
@@ -251,7 +257,9 @@ class Map:
             line_y = []
 
     def drawOutput(self):
-        temp_im = Image.new('RGB', (int(self.source_im.width), int(self.source_im.height)))
+        temp_im = Image.new('RGB', (int(self.source_im.width),
+                                    int(self.source_im.height)))
+
         draw = ImageDraw.Draw(temp_im)
 
         # reset image
@@ -261,7 +269,8 @@ class Map:
             if not line:
                 continue
 
-            draw.line((line), fill=(255, 255, 255, self.line_alpha), width=self.line_width)
+            draw.line((line), fill=(255, 255, 255, self.line_alpha),
+                      width=self.line_width)
 
         # hide logo
         draw.rectangle([7250, 0, 10700, 950], fill=(0, 0, 0))
@@ -270,7 +279,8 @@ class Map:
         new_height = int(self.source_im.height * self.scl)
         temp_im = temp_im.resize((new_width, new_height), Image.ANTIALIAS)
 
-        self.dest_im = Image.new('RGB', (self.destination_size, self.destination_size))
+        self.dest_im = Image.new('RGB', (self.destination_size,
+                                         self.destination_size))
         self.dest_im.paste(temp_im, (self.dx, self.dy))
 
         # add watermark
@@ -278,7 +288,8 @@ class Map:
         text = "Lorenzo Rossi - www.lorenzoros.si"
         x = self.font_size * 0.5
         y = self.destination_size - self.font_size * 1.5
-        draw.text((x, y), fill=(127, 127, 127, 32), text=text, stroke_width=0, font=self.font)
+        draw.text((x, y), fill=(127, 127, 127, 32), text=text, stroke_width=0,
+                  font=self.font)
 
     def saveDestImage(self, folder, filename, frame_num):
         ext = "png"
@@ -292,7 +303,9 @@ class Map:
         started = None
         while Path("PAUSE").is_file():
             if not printed:
-                logging.info("File PAUSE detected. Pausing until it's deleted.")
+                logging.info("File PAUSE detected. "
+                             "Pausing until it's deleted.")
+
                 started = time.time()
                 printed = True
             time.sleep(1)
@@ -302,6 +315,7 @@ class Map:
             logging.info("Resuming....")
             return lost
         return 0
+
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a looping animation"
@@ -337,7 +351,9 @@ def main():
                             level=logging.INFO)
 
     logging.info("Script started")
-    logging.info(f"Generating video: {args.fps} fps, {args.duration} seconds, {args.size} pixels of size")
+    logging.info(f"Generating video: {args.fps} fps, {args.duration} seconds, "
+                 f"{args.size} pixels of size")
+
     script_start = time.time()
 
     source_file = "source/Italia_tinitaly.jpg"
@@ -401,24 +417,44 @@ def main():
             )
         logging.info(log_text)
 
-    # generate the output video, webm and gif with timestamp in the name to avoid overwriting
+    # generate the output video, webm and gif with timestamp in the name to
+    # avoid overwriting
     try:
         timestamp = int(time.time())
-        options = f"ffmpeg -y -r {args.fps} -i {frames_folder}/{destination_file}_%07d.png -loop 0 {video_folder}/{destination_file}_{timestamp}.mp4"
+        options = f"ffmpeg -y -r {args.fps} -i " \
+                  f"{frames_folder}/{destination_file}_%07d.png -loop 0 " \
+                  f"{video_folder}/{destination_file}_{timestamp}.mp4"
         subprocess.run(options.split(" "))
-        options = f"ffmpeg -y -i {video_folder}/{destination_file}_{timestamp}.mp4 -loop 0 -filter_complex fps=25,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse {video_folder}/{destination_file}_{timestamp}.gif"
+
+        options = "ffmpeg -y -i " \
+                  f"{video_folder}/{destination_file}_{timestamp}.mp4 -loop 0" \
+                  " -filter_complex fps=25,split[s0][s1];[s0]palettegen[p];"\
+                  "[s1][p]paletteuse " \
+                  f"{video_folder}/{destination_file}_{timestamp}.gif"
         subprocess.run(options.split(" "))
-        options = f"ffmpeg -i {video_folder}/{destination_file}_{timestamp}.mp4 -c:v libvpx-vp9 -crf 15 -b:v 0 -b:a 128k -c:a libopus {video_folder}/{destination_file}_{timestamp}.webm"
+
+        options = "ffmpeg -i " \
+                  f"{video_folder}/{destination_file}_{timestamp}.mp4 -c:v " \
+                  "libvpx-vp9 -crf 15 -b:v 0 -b:a 128k -c:a libopus " \
+                  f"{video_folder}/{destination_file}_{timestamp}.webm"
         subprocess.run(options.split(" "))
-        options = f"ffmpeg -i {video_folder}/{destination_file}_{timestamp}.mp4 -c:v libvpx-vp9 -crf 50 -b:v 0 -b:a 128k -c:a libopus {video_folder}/{destination_file}_{timestamp}_low_quality.webm"
+
+        options = "ffmpeg -i " \
+                  f"{video_folder}/{destination_file}_{timestamp}.mp4 -c:v " \
+                  "libvpx-vp9 -crf 50 -b:v 0 -b:a 128k -c:a libopus " \
+                  f"{video_folder}/{destination_file}_{timestamp}_low_quality" \
+                  ".webm"
         subprocess.run(options.split(" "))
+
     except Exception as e:
         logging.error(f"Cannot make output video using ffmpeg. Error: {e}")
 
     elapsed = int(time.time() - script_start - time_lost)
     elapsed_min = int(elapsed / 60)
     seconds_per_frame = int(elapsed / total_frames)
-    logging.info(f"Script completed. It took {elapsed} seconds (~{elapsed_min} minutes), averaging ~{seconds_per_frame}s per frame")
+    logging.info(f"Script completed. It took {elapsed} seconds "
+                 f"(~{elapsed_min} minutes), averaging ~{seconds_per_frame}s"
+                 " per frame")
 
 
 if __name__ == "__main__":
