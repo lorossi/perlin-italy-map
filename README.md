@@ -1,4 +1,6 @@
 # Perlin Italy Map
+~Si magna bè, si vive bè, si sta yeah yeah~ Unknown Italian graffiti, 1272 A.D. circa
+
 My first experiment in DEM (Digital Elevation Models) using Python.
 
 This script looks for Elevation and animates using a bit of Simplex Noise. It's also perfectly looping over its duration. Spot the cut!
