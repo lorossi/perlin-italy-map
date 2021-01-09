@@ -1,5 +1,5 @@
 # Perlin Italy Map
-~Si magna bè, si vive bè, si sta yeah yeah~ Unknown Italian graffiti, 1272 A.D. circa
+`Si magna bè, si vive bè, si sta yeah yeah`
 
 My first experiment in DEM (Digital Elevation Models) using Python.
 
